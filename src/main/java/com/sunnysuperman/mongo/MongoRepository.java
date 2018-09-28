@@ -2,6 +2,8 @@ package com.sunnysuperman.mongo;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.bson.Document;
@@ -11,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
 
 import com.mongodb.MongoClient;
+import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
@@ -19,7 +22,13 @@ import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.FindOneAndDeleteOptions;
 import com.mongodb.client.model.FindOneAndUpdateOptions;
 import com.mongodb.client.model.UpdateOptions;
+import com.mongodb.client.model.WriteModel;
+import com.sunnysuperman.commons.model.Pagination;
 import com.sunnysuperman.commons.model.PullPagination;
+import com.sunnysuperman.commons.util.StringUtil;
+import com.sunnysuperman.repository.InsertUpdate;
+import com.sunnysuperman.repository.serialize.SerializeDoc;
+import com.sunnysuperman.repository.serialize.SerializeManager;
 
 public class MongoRepository {
     public static final String ID = "_id";
@@ -84,11 +93,17 @@ public class MongoRepository {
         }
     }
 
-    protected void trace(MongoClient client, String action, long t1) {
+    protected void trace(MongoClient client, long t1, Object... params) {
         if (traceLog && logger.isInfoEnabled()) {
             long t2 = System.nanoTime();
             long take = TimeUnit.NANOSECONDS.toMillis(t2 - t1);
-            logger.info("[Mongo] " + action + " take: " + take + "ms");
+            for (int i = 0; i < params.length; i++) {
+                Object param = params[i];
+                if (param == null) {
+                    params[i] = "null";
+                }
+            }
+            logger.info("[Mongo] " + StringUtil.join(params, " ") + ", take: " + take + "ms");
         }
     }
 
@@ -100,9 +115,72 @@ public class MongoRepository {
             return op.execute(database);
         } finally {
             if (traceLog) {
-                trace(client, "execute", t1);
+                trace(client, t1, "execute");
             }
         }
+    }
+
+    public <T> boolean save(T bean, Set<String> fields, InsertUpdate insertUpdate, MongoSerializeWrapper<T> wrapper,
+            boolean removeNullFields) {
+        SerializeDoc sdoc = SerializeManager.serialize(bean, fields, insertUpdate);
+        String collectionName = sdoc.getTableName();
+        Map<String, Object> raw = sdoc.getDoc();
+        Document doc = MongoSerializer.serializeMap(raw, removeNullFields);
+        if (wrapper != null) {
+            doc = wrapper.wrap(doc, bean);
+        }
+        if (insertUpdate == InsertUpdate.UPDATE || insertUpdate == InsertUpdate.RUNTIME) {
+            Document update = new Document("$set", doc);
+            if (removeNullFields) {
+                // unset fields
+                Document unset = new Document();
+                for (String key : raw.keySet()) {
+                    if (doc.containsKey(key)) {
+                        continue;
+                    }
+                    unset.append(key, StringUtil.EMPTY);
+                }
+                update.append("$unset", unset);
+            }
+            boolean updated = update(collectionName, update, sdoc.getIdValues()[0]);
+            if (updated || insertUpdate == InsertUpdate.UPDATE) {
+                return updated;
+            }
+        }
+        insert(collectionName, doc);
+        return true;
+    }
+
+    public <T> boolean save(T bean, MongoSerializeWrapper<T> wrapper) {
+        return save(bean, null, InsertUpdate.RUNTIME, wrapper, true);
+    }
+
+    public <T> boolean save(T bean) {
+        return save(bean, null, InsertUpdate.RUNTIME, null, true);
+    }
+
+    public <T> void insert(T bean, MongoSerializeWrapper<T> wrapper) {
+        save(bean, null, InsertUpdate.INSERT, wrapper, true);
+    }
+
+    public <T> void insert(T bean) {
+        save(bean, null, InsertUpdate.INSERT, null, true);
+    }
+
+    public <T> boolean update(T bean, MongoSerializeWrapper<T> wrapper) {
+        return save(bean, null, InsertUpdate.UPDATE, wrapper, true);
+    }
+
+    public <T> boolean update(T bean) {
+        return save(bean, null, InsertUpdate.UPDATE, null, true);
+    }
+
+    public <T> boolean update(T bean, Set<String> fields, MongoSerializeWrapper<T> wrapper) {
+        return save(bean, fields, InsertUpdate.UPDATE, wrapper, true);
+    }
+
+    public <T> boolean update(T bean, Set<String> fields) {
+        return save(bean, fields, InsertUpdate.UPDATE, null, true);
     }
 
     public void insert(String collectionName, Document doc) {
@@ -114,24 +192,39 @@ public class MongoRepository {
             collection.insertOne(doc);
         } finally {
             if (traceLog) {
-                trace(client, "insert", t1);
+                trace(client, t1, "insert:" + collectionName, doc);
             }
         }
     }
 
-    public boolean update(String collectionName, Document doc, Object id) {
-        if (id == null) {
-            throw new IllegalArgumentException("Require id");
-        }
+    public void insertMany(String collectionName, List<Document> docs) {
         long t1 = traceLog ? System.nanoTime() : 0;
         MongoClient client = getClient();
         try {
             MongoDatabase database = client.getDatabase(db);
             MongoCollection<Document> collection = database.getCollection(collectionName);
-            return collection.updateOne(getIdDocument(id), doc).getModifiedCount() > 0;
+            collection.insertMany(docs);
         } finally {
             if (traceLog) {
-                trace(client, "update", t1);
+                trace(client, t1, "insertMany:" + collectionName, docs);
+            }
+        }
+    }
+
+    public boolean update(String collectionName, Document update, Object id) {
+        if (id == null) {
+            throw new IllegalArgumentException("Require id");
+        }
+        long t1 = traceLog ? System.nanoTime() : 0;
+        Document filter = getIdDocument(id);
+        MongoClient client = getClient();
+        try {
+            MongoDatabase database = client.getDatabase(db);
+            MongoCollection<Document> collection = database.getCollection(collectionName);
+            return collection.updateOne(filter, update).getModifiedCount() > 0;
+        } finally {
+            if (traceLog) {
+                trace(client, t1, "update:" + collectionName, "filter:", filter, "update:", update);
             }
         }
     }
@@ -145,23 +238,24 @@ public class MongoRepository {
             return collection.updateMany(filter, update, options).getModifiedCount();
         } finally {
             if (traceLog) {
-                trace(client, "updateMany", t1);
+                trace(client, t1, "updateMany:" + collectionName, "filter:", filter, "update:", update);
             }
         }
     }
 
-    public MongoSaveResult upsert(String collectionName, Document doc, Object id) {
+    public MongoSaveResult upsert(String collectionName, Document upsert, Object id) {
         long t1 = traceLog ? System.nanoTime() : 0;
+        Document filter = getIdDocument(id);
         MongoClient client = getClient();
         try {
             MongoDatabase database = client.getDatabase(db);
             MongoCollection<Document> collection = database.getCollection(collectionName);
-            boolean updated = collection.updateOne(getIdDocument(id), doc, new UpdateOptions().upsert(true))
+            boolean updated = collection.updateOne(filter, upsert, new UpdateOptions().upsert(true))
                     .getMatchedCount() > 0;
             return updated ? MongoSaveResult.UPDATED : MongoSaveResult.INSERTED;
         } finally {
             if (traceLog) {
-                trace(client, "upsert", t1);
+                trace(client, t1, "upsert:" + collectionName, "filter:", filter, "upsert:", upsert);
             }
         }
     }
@@ -184,7 +278,49 @@ public class MongoRepository {
             return updated ? MongoSaveResult.UPDATED : MongoSaveResult.INSERTED;
         } finally {
             if (traceLog) {
-                trace(client, "save", t1);
+                trace(client, t1, "save:" + collectionName, doc);
+            }
+        }
+    }
+
+    public boolean remove(String collectionName, Bson filter) {
+        long t1 = traceLog ? System.nanoTime() : 0;
+        MongoClient client = getClient();
+        try {
+            MongoDatabase database = client.getDatabase(db);
+            MongoCollection<Document> collection = database.getCollection(collectionName);
+            return collection.deleteOne(filter).getDeletedCount() > 0;
+        } finally {
+            if (traceLog) {
+                trace(client, t1, "remove:" + collectionName, "filter:", filter);
+            }
+        }
+    }
+
+    public long removeMany(String collectionName, Bson filter) {
+        long t1 = traceLog ? System.nanoTime() : 0;
+        MongoClient client = getClient();
+        try {
+            MongoDatabase database = client.getDatabase(db);
+            MongoCollection<Document> collection = database.getCollection(collectionName);
+            return collection.deleteMany(filter).getDeletedCount();
+        } finally {
+            if (traceLog) {
+                trace(client, t1, "removeMany:" + collectionName, "filter:", filter);
+            }
+        }
+    }
+
+    public BulkWriteResult batch(String collectionName, List<WriteModel<Document>> requests) {
+        long t1 = traceLog ? System.nanoTime() : 0;
+        MongoClient client = getClient();
+        try {
+            MongoDatabase database = client.getDatabase(db);
+            MongoCollection<Document> collection = database.getCollection(collectionName);
+            return collection.bulkWrite(requests);
+        } finally {
+            if (traceLog) {
+                trace(client, t1, "batch:" + collectionName, "requests:", requests);
             }
         }
     }
@@ -215,7 +351,7 @@ public class MongoRepository {
         } finally {
             closeCursor(cursor);
             if (traceLog) {
-                trace(client, "find", t1);
+                trace(client, t1, "find:" + collectionName, "filter:", filter, "sort:", sort, "fields:", fields);
             }
         }
     }
@@ -229,7 +365,7 @@ public class MongoRepository {
             return collection.findOneAndUpdate(filter, update, options);
         } finally {
             if (traceLog) {
-                trace(client, "findAndUpdate", t1);
+                trace(client, t1, "findAndUpdate:" + collectionName, "filter:", filter, "update:", update);
             }
         }
     }
@@ -243,7 +379,7 @@ public class MongoRepository {
             return collection.findOneAndDelete(filter, options);
         } finally {
             if (traceLog) {
-                trace(client, "findAndRemove", t1);
+                trace(client, t1, "findAndRemove:" + collectionName, "filter:", filter);
             }
         }
     }
@@ -277,13 +413,16 @@ public class MongoRepository {
             List<T> items = new ArrayList<>(limit);
             while (cursor.hasNext()) {
                 Document doc = cursor.next();
-                items.add(mapper.map(doc));
+                T item = mapper.map(doc);
+                if (item != null) {
+                    items.add(item);
+                }
             }
             return items;
         } finally {
             closeCursor(cursor);
             if (traceLog) {
-                trace(client, "findForList", t1);
+                trace(client, t1, "findForList:" + collectionName, "filter:", filter, "sort:", sort, "fields:", fields);
             }
         }
     }
@@ -312,6 +451,20 @@ public class MongoRepository {
         return PullPagination.newInstance(items, String.valueOf(newOffset), hasMore);
     }
 
+    public <T> Pagination<T> findForPagination(String collectionName, Bson filter, Bson sort, Bson fields, int offset,
+            int limit, MongoMapper<T> mapper) {
+        List<T> items = findForList(collectionName, filter, sort, fields, offset, limit, mapper);
+        int size = items.size();
+        if (size == 0) {
+            return Pagination.emptyInstance(limit);
+        }
+        if (offset != 0 || size == limit) {
+            long sizeLong = count(collectionName, filter);
+            size = sizeLong > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) sizeLong;
+        }
+        return new Pagination<T>(items, size, offset, limit);
+    }
+
     public long count(String collectionName, Bson filter) {
         long t1 = traceLog ? System.nanoTime() : 0;
         MongoClient client = getClient();
@@ -321,7 +474,7 @@ public class MongoRepository {
             return collection.count(filter);
         } finally {
             if (traceLog) {
-                trace(client, "count", t1);
+                trace(client, t1, "count:" + collectionName, "filter:", filter);
             }
         }
     }
@@ -344,7 +497,7 @@ public class MongoRepository {
         } finally {
             closeCursor(cursor);
             if (traceLog) {
-                trace(client, "aggregate", t1);
+                trace(client, t1, "aggregate:" + collectionName, "pipeline:", pipeline);
             }
         }
     }

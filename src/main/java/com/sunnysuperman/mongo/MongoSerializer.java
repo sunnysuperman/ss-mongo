@@ -1,6 +1,7 @@
 package com.sunnysuperman.mongo;
 
 import java.lang.reflect.Array;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
@@ -34,6 +35,9 @@ public class MongoSerializer {
         if (value instanceof Date) {
             return ((Date) value).getTime();
         }
+        if (value instanceof BigDecimal) {
+            return ((BigDecimal) value).doubleValue();
+        }
         if (value.getClass().isArray() && value.getClass().getComponentType().equals(byte.class)) {
             // byte array (should be blob type)
             return value;
@@ -61,7 +65,7 @@ public class MongoSerializer {
         return serializeMap(Bean.toMap(value), true);
     }
 
-    public static Document serializeMap(Map<?, ?> map, boolean removeNull) throws RepositoryException {
+    public static Document serializeMap(Map<?, ?> map, boolean removeNullFields) throws RepositoryException {
         if (map == null) {
             return null;
         }
@@ -70,7 +74,7 @@ public class MongoSerializer {
             String key = entry.getKey().toString();
             Object value = entry.getValue();
             value = serializeObject(value);
-            if (removeNull && value == null) {
+            if (removeNullFields && value == null) {
                 continue;
             }
             doc.put(key, value);
@@ -78,13 +82,13 @@ public class MongoSerializer {
         return doc;
     }
 
-    public static Document serialize(Object bean) throws RepositoryException {
-        return serialize(bean, null, InsertUpdate.INSERT);
+    public static Document serialize(Object bean, Set<String> fields, InsertUpdate insertUpdate,
+            boolean removeNullFields) throws RepositoryException {
+        Map<String, Object> raw = SerializeManager.serialize(bean, fields, insertUpdate).getDoc();
+        return serializeMap(raw, removeNullFields);
     }
 
-    public static Document serialize(Object bean, Set<String> fields, InsertUpdate insertUpdate)
-            throws RepositoryException {
-        Map<String, Object> raw = SerializeManager.serialize(bean, fields, insertUpdate).getDoc();
-        return serializeMap(raw, insertUpdate == InsertUpdate.INSERT);
+    public static Document serialize(Object bean) throws RepositoryException {
+        return serialize(bean, null, InsertUpdate.INSERT, true);
     }
 }
