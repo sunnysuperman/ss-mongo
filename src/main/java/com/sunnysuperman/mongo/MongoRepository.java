@@ -10,7 +10,6 @@ import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.util.StringUtils;
 
 import com.mongodb.MongoClient;
 import com.mongodb.bulk.BulkWriteResult;
@@ -429,7 +428,7 @@ public class MongoRepository {
 
     public <T> PullPagination<T> findForPullPagination(String collectionName, Bson filter, Bson sort, Bson fields,
             String marker, int limit, MongoMapper<T> mapper) {
-        int offset = StringUtils.isEmpty(marker) ? 0 : Integer.parseInt(marker);
+        int offset = StringUtil.isEmpty(marker) ? 0 : Integer.parseInt(marker);
         List<T> items = findForList(collectionName, filter, sort, fields, offset, limit + 1, mapper);
         if (items.isEmpty()) {
             return PullPagination.emptyInstance();
