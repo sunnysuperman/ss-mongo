@@ -141,7 +141,7 @@ public class MongoRepository {
                 }
                 update.append("$unset", unset);
             }
-            boolean updated = update(collectionName, update, sdoc.getIdValues()[0]);
+            boolean updated = updateById(collectionName, update, sdoc.getIdValues()[0]);
             if (updated || insertUpdate == InsertUpdate.UPDATE) {
                 return updated;
             }
@@ -210,12 +210,8 @@ public class MongoRepository {
         }
     }
 
-    public boolean update(String collectionName, Document update, Object id) {
-        if (id == null) {
-            throw new IllegalArgumentException("Require id");
-        }
+    public boolean update(String collectionName, Document update, Document filter) {
         long t1 = traceLog ? System.nanoTime() : 0;
-        Document filter = getIdDocument(id);
         MongoClient client = getClient();
         try {
             MongoDatabase database = client.getDatabase(db);
@@ -226,6 +222,11 @@ public class MongoRepository {
                 trace(client, t1, "update:" + collectionName, "filter:", filter, "update:", update);
             }
         }
+    }
+
+    public boolean updateById(String collectionName, Document update, Object id) {
+        Document filter = getIdDocument(id);
+        return update(collectionName, update, filter);
     }
 
     public long updateMany(String collectionName, Document filter, Document update, UpdateOptions options) {
