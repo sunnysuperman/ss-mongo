@@ -119,10 +119,12 @@ public class MongoRepository {
         }
     }
 
-    public <T> boolean save(T bean, Set<String> fields, InsertUpdate insertUpdate, MongoSerializeWrapper<T> wrapper,
-            boolean removeNullFields) {
+    public <T> boolean save(T bean, String collectionName, Set<String> fields, InsertUpdate insertUpdate,
+            MongoSerializeWrapper<T> wrapper, boolean removeNullFields) {
         SerializeDoc sdoc = SerializeManager.serialize(bean, fields, insertUpdate);
-        String collectionName = sdoc.getTableName();
+        if (collectionName == null) {
+            collectionName = sdoc.getTableName();
+        }
         Map<String, Object> raw = sdoc.getDoc();
         Document doc = MongoSerializer.serializeMap(raw, removeNullFields);
         if (wrapper != null) {
@@ -139,7 +141,9 @@ public class MongoRepository {
                     }
                     unset.append(key, StringUtil.EMPTY);
                 }
-                update.append("$unset", unset);
+                if (!unset.isEmpty()) {
+                    update.append("$unset", unset);
+                }
             }
             boolean updated = updateById(collectionName, update, sdoc.getIdValues()[0]);
             if (updated || insertUpdate == InsertUpdate.UPDATE) {
@@ -151,35 +155,35 @@ public class MongoRepository {
     }
 
     public <T> boolean save(T bean, MongoSerializeWrapper<T> wrapper) {
-        return save(bean, null, InsertUpdate.RUNTIME, wrapper, true);
+        return save(bean, null, null, InsertUpdate.RUNTIME, wrapper, true);
     }
 
     public <T> boolean save(T bean) {
-        return save(bean, null, InsertUpdate.RUNTIME, null, true);
+        return save(bean, null, null, InsertUpdate.RUNTIME, null, true);
     }
 
     public <T> void insert(T bean, MongoSerializeWrapper<T> wrapper) {
-        save(bean, null, InsertUpdate.INSERT, wrapper, true);
+        save(bean, null, null, InsertUpdate.INSERT, wrapper, true);
     }
 
     public <T> void insert(T bean) {
-        save(bean, null, InsertUpdate.INSERT, null, true);
+        save(bean, null, null, InsertUpdate.INSERT, null, true);
     }
 
     public <T> boolean update(T bean, MongoSerializeWrapper<T> wrapper) {
-        return save(bean, null, InsertUpdate.UPDATE, wrapper, true);
+        return save(bean, null, null, InsertUpdate.UPDATE, wrapper, true);
     }
 
     public <T> boolean update(T bean) {
-        return save(bean, null, InsertUpdate.UPDATE, null, true);
+        return save(bean, null, null, InsertUpdate.UPDATE, null, true);
     }
 
     public <T> boolean update(T bean, Set<String> fields, MongoSerializeWrapper<T> wrapper) {
-        return save(bean, fields, InsertUpdate.UPDATE, wrapper, true);
+        return save(bean, null, fields, InsertUpdate.UPDATE, wrapper, true);
     }
 
     public <T> boolean update(T bean, Set<String> fields) {
-        return save(bean, fields, InsertUpdate.UPDATE, null, true);
+        return save(bean, null, fields, InsertUpdate.UPDATE, null, true);
     }
 
     public void insert(String collectionName, Document doc) {
