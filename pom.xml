@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>com.sunnysuperman</groupId>
 	<artifactId>ss-mongo</artifactId>
-	<version>0.2.2</version>
+	<version>0.2.6</version>
 	<packaging>jar</packaging>
 	<name>${project.artifactId}</name>
 	<url>https://github.com/sunnysuperman/${project.artifactId}</url>
@@ -34,13 +34,8 @@
 		</dependency>
 		<dependency>
 			<groupId>com.sunnysuperman</groupId>
-			<artifactId>ss-commons</artifactId>
-			<version>0.2.2</version>
-		</dependency>
-		<dependency>
-			<groupId>com.sunnysuperman</groupId>
 			<artifactId>ss-repository</artifactId>
-			<version>0.2.4</version>
+			<version>0.2.6</version>
 		</dependency>
 	</dependencies>
 
