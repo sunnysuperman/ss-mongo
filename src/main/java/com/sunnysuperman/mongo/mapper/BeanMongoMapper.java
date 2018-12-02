@@ -4,7 +4,7 @@ import org.bson.Document;
 
 import com.sunnysuperman.commons.bean.ParseBeanOptions;
 import com.sunnysuperman.mongo.MongoMapper;
-import com.sunnysuperman.repository.serialize.SerializeManager;
+import com.sunnysuperman.repository.serialize.Serializer;
 
 public class BeanMongoMapper<T> implements MongoMapper<T> {
     private Class<T> clazz;
@@ -23,7 +23,7 @@ public class BeanMongoMapper<T> implements MongoMapper<T> {
 
     @Override
     public T map(Document doc) {
-        return SerializeManager.deserialize(doc, clazz, options);
+        return Serializer.deserialize(doc, clazz, options);
     }
 
 }

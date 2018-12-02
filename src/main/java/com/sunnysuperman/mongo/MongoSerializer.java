@@ -15,7 +15,7 @@ import org.bson.Document;
 import com.sunnysuperman.commons.bean.Bean;
 import com.sunnysuperman.repository.InsertUpdate;
 import com.sunnysuperman.repository.RepositoryException;
-import com.sunnysuperman.repository.serialize.SerializeManager;
+import com.sunnysuperman.repository.serialize.Serializer;
 
 public class MongoSerializer {
 
@@ -84,7 +84,7 @@ public class MongoSerializer {
 
     public static Document serialize(Object bean, Set<String> fields, InsertUpdate insertUpdate,
             boolean removeNullFields) throws RepositoryException {
-        Map<String, Object> raw = SerializeManager.serialize(bean, fields, insertUpdate).getDoc();
+        Map<String, Object> raw = Serializer.serialize(bean, fields, insertUpdate).getDoc();
         return serializeMap(raw, removeNullFields);
     }
 

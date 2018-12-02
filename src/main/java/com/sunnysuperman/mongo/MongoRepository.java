@@ -26,8 +26,9 @@ import com.sunnysuperman.commons.model.Pagination;
 import com.sunnysuperman.commons.model.PullPagination;
 import com.sunnysuperman.commons.util.StringUtil;
 import com.sunnysuperman.repository.InsertUpdate;
+import com.sunnysuperman.repository.RepositoryException;
 import com.sunnysuperman.repository.serialize.SerializeDoc;
-import com.sunnysuperman.repository.serialize.SerializeManager;
+import com.sunnysuperman.repository.serialize.Serializer;
 
 public class MongoRepository {
     public static final String ID = "_id";
@@ -121,7 +122,7 @@ public class MongoRepository {
 
     public <T> boolean save(T bean, String collectionName, Set<String> fields, InsertUpdate insertUpdate,
             MongoSerializeWrapper<T> wrapper, boolean removeNullFields) {
-        SerializeDoc sdoc = SerializeManager.serialize(bean, fields, insertUpdate);
+        SerializeDoc sdoc = Serializer.serialize(bean, fields, insertUpdate);
         if (collectionName == null) {
             collectionName = sdoc.getTableName();
         }
@@ -130,36 +131,48 @@ public class MongoRepository {
         if (wrapper != null) {
             doc = wrapper.wrap(doc, bean);
         }
-        if (insertUpdate == InsertUpdate.UPDATE || insertUpdate == InsertUpdate.RUNTIME) {
-            Document update = new Document("$set", doc);
-            if (removeNullFields) {
-                // unset fields
-                Document unset = new Document();
-                for (String key : raw.keySet()) {
-                    if (doc.containsKey(key)) {
-                        continue;
-                    }
-                    unset.append(key, StringUtil.EMPTY);
+        // insert only
+        if (insertUpdate == InsertUpdate.INSERT) {
+            insert(collectionName, doc);
+            return true;
+        }
+        // update
+        Document update = new Document("$set", doc);
+        if (removeNullFields) {
+            // unset fields
+            Document unset = new Document();
+            for (String key : raw.keySet()) {
+                if (doc.containsKey(key)) {
+                    continue;
                 }
-                if (!unset.isEmpty()) {
-                    update.append("$unset", unset);
-                }
+                unset.append(key, StringUtil.EMPTY);
             }
-            boolean updated = updateById(collectionName, update, sdoc.getIdValues()[0]);
-            if (updated || insertUpdate == InsertUpdate.UPDATE) {
-                return updated;
+            if (!unset.isEmpty()) {
+                update.append("$unset", unset);
             }
         }
-        insert(collectionName, doc);
+        if (sdoc.getIdValues() == null) {
+            throw new RepositoryException("Require id to update");
+        }
+        boolean updated = updateById(collectionName, update, sdoc.getIdValues()[0]);
+        if (updated || insertUpdate == InsertUpdate.UPDATE) {
+            return updated;
+        }
+        // upsert
+        Document insert = MongoSerializer.serializeMap(sdoc.getUpsertDoc(), removeNullFields);
+        if (wrapper != null) {
+            insert = wrapper.wrap(insert, bean);
+        }
+        insert(collectionName, insert);
         return true;
     }
 
     public <T> boolean save(T bean, MongoSerializeWrapper<T> wrapper) {
-        return save(bean, null, null, InsertUpdate.RUNTIME, wrapper, true);
+        return save(bean, null, null, InsertUpdate.UPSERT, wrapper, true);
     }
 
     public <T> boolean save(T bean) {
-        return save(bean, null, null, InsertUpdate.RUNTIME, null, true);
+        return save(bean, null, null, InsertUpdate.UPSERT, null, true);
     }
 
     public <T> void insert(T bean, MongoSerializeWrapper<T> wrapper) {
