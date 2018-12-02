@@ -132,7 +132,7 @@ public class MongoRepository {
             doc = wrapper.wrap(doc, bean);
         }
         // insert only
-        if (insertUpdate == InsertUpdate.INSERT) {
+        if (insertUpdate == InsertUpdate.INSERT || sdoc.getIdValues() == null) {
             insert(collectionName, doc);
             return true;
         }

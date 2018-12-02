@@ -1,8 +1,10 @@
 package com.sunnysuperman.mongo.test;
 
 import org.bson.Document;
+import org.bson.types.ObjectId;
 
 import com.mongodb.MongoClient;
+import com.sunnysuperman.commons.util.FormatUtil;
 import com.sunnysuperman.mongo.MongoRepository;
 import com.sunnysuperman.mongo.MongoSerializeWrapper;
 import com.sunnysuperman.mongo.mapper.RawMongoMapper;
@@ -36,6 +38,55 @@ public class MongoRepositoryTest extends TestCase {
         }
 
         public void setId(String id) {
+            this.id = id;
+        }
+
+        public Long getCreatedAt() {
+            return createdAt;
+        }
+
+        public void setCreatedAt(Long createdAt) {
+            this.createdAt = createdAt;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public String getNotes() {
+            return notes;
+        }
+
+        public void setNotes(String notes) {
+            this.notes = notes;
+        }
+
+    }
+
+    @SerializeBean(value = "test_device2", camel2underline = false)
+    public static class Device2 {
+        @SerializeId(generator = IdGenerator.PROVIDE)
+        @SerializeProperty(column = "_id")
+        private ObjectId id;
+
+        @SerializeProperty(updatable = false)
+        private Long createdAt;
+
+        @SerializeProperty
+        private String name;
+
+        @SerializeProperty
+        private String notes;
+
+        public ObjectId getId() {
+            return id;
+        }
+
+        public void setId(ObjectId id) {
             this.id = id;
         }
 
@@ -166,6 +217,52 @@ public class MongoRepositoryTest extends TestCase {
         }
     }
 
+    public void test_insert_update2() {
+        Long createdAt = 123L;
+        repository.removeMany("test_device2", new Document());
+
+        ObjectId id;
+        // insert 1
+        {
+            String name = "Device name on insert 1";
+            Device2 device = new Device2();
+            device.setName(name);
+            device.setCreatedAt(createdAt);
+            repository.insert(device);
+
+            Document saved = repository.find("test_device2", new Document(), RawMongoMapper.getInstance());
+            assertTrue(saved.getString("name").equals(name));
+            assertTrue(saved.getLong("createdAt").equals(createdAt));
+            id = new ObjectId(FormatUtil.parseString(saved.get(MongoRepository.ID)));
+        }
+
+        {
+            String name = "Device name on update 1";
+            String notes = "notes on update 1";
+            Device2 device = new Device2();
+            device.setId(id);
+            device.setName(name);
+            device.setNotes(notes);
+            repository.update(device);
+            Document saved = repository.find("test_device2", MongoRepository.getIdDocument(id),
+                    RawMongoMapper.getInstance());
+            assertTrue(saved.getString("name").equals(name));
+            assertTrue(saved.getString("notes").equals(notes));
+        }
+
+        {
+            String name = "Device name on update 2";
+            Device2 device = new Device2();
+            device.setId(id);
+            device.setName(name);
+            repository.update(device);
+            Document saved = repository.find("test_device2", MongoRepository.getIdDocument(id),
+                    RawMongoMapper.getInstance());
+            assertTrue(saved.getString("name").equals(name));
+            assertTrue(saved.getString("notes") == null);
+        }
+    }
+
     public void test_save() {
         String id = "1001";
         Long createdAt = 123L;
@@ -185,7 +282,7 @@ public class MongoRepositoryTest extends TestCase {
             assertTrue(saved.getLong("createdAt").equals(createdAt));
             assertTrue(saved.getString("name").equals(name));
             assertTrue(saved.getString("notes").equals(notes));
-            
+
         }
 
         {
@@ -223,6 +320,39 @@ public class MongoRepositoryTest extends TestCase {
             assertTrue(saved.getLong("createdAt").equals(createdAt));
             assertTrue(saved.getString("name").equals(name));
             assertTrue(saved.getString("notes").equals(notes));
+        }
+    }
+
+    public void test_save2() {
+        Long createdAt = 123L;
+        ObjectId id;
+        repository.removeMany("test_device2", new Document());
+
+        // insert
+        {
+            String name = "name on save 1";
+            Device2 device = new Device2();
+            device.setName(name);
+            device.setCreatedAt(createdAt);
+            repository.save(device);
+
+            Document saved = repository.find("test_device2", new Document(), RawMongoMapper.getInstance());
+            assertTrue(saved.getString("name").equals(name));
+            assertTrue(saved.getLong("createdAt").equals(createdAt));
+            id = new ObjectId(FormatUtil.parseString(saved.get(MongoRepository.ID)));
+        }
+
+        {
+            String name = "name on save 2";
+            Device2 device = new Device2();
+            device.setId(id);
+            device.setName(name);
+            repository.save(device);
+            Document saved = repository.find("test_device2", MongoRepository.getIdDocument(id),
+                    RawMongoMapper.getInstance());
+            assertTrue(saved.getLong("createdAt").equals(createdAt));
+            assertTrue(saved.getString("name").equals(name));
+            assertTrue(saved.getString("notes") == null);
         }
     }
 
